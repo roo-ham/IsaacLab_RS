@@ -34,6 +34,6 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.03,
+        desired_kl=0.015,
         max_grad_norm=1.0,
     )
