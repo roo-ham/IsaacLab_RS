@@ -6,5 +6,11 @@
 # =======code edit=======
 """MDP terms specific to the Ant rough-terrain task."""
 
-from .ant_foot_kinematics import FOOT_NAMES, AntFootKinematics, foot_tip_height  # noqa: F401
+from .ant_foot_kinematics import (  # noqa: F401
+    FOOT_NAMES,
+    AntFootKinematics,
+    foot_tip_height,
+    foot_tip_height_local,
+    foot_tip_state,
+)
 from .reward import *  # noqa: F401, F403

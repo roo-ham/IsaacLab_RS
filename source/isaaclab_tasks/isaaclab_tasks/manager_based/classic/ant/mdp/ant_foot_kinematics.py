@@ -223,3 +223,37 @@ def foot_tip_height(
         ground_z = env.scene.sensors[sensor_cfg.name].data.ray_hits_w[..., 2].mean(dim=1, keepdim=True)
     return tip_pos[..., 2] - ground_z
 
+def foot_tip_state(env, asset_name: str = "robot") -> tuple[torch.Tensor, torch.Tensor]:
+    """World position and linear velocity of each foot tip, each (num_envs, 4, 3) in FOOT_NAMES order.
+
+    The tip offsets in the foot-link frame come from the USD collision shapes (AntFootKinematics, built once
+    and cached on the env); position and velocity follow from the simulated link pose and twist.
+    """
+    fk = getattr(env, "_ant_foot_fk", None)
+    if fk is None:
+        fk = AntFootKinematics(env, asset_name)
+        env._ant_foot_fk = fk
+    asset = env.scene[asset_name]
+    ids = fk.foot_body_ids
+    offsets = torch.stack(fk.tip_offsets).unsqueeze(0).expand(asset.num_instances, -1, -1)
+    r = math_utils.quat_apply(asset.data.body_link_quat_w[:, ids], offsets)  # link origin -> tip, world frame
+    tip_pos = asset.data.body_link_pos_w[:, ids] + r
+    tip_vel = asset.data.body_link_lin_vel_w[:, ids] + torch.cross(asset.data.body_link_ang_vel_w[:, ids], r, dim=-1)
+    return tip_pos, tip_vel
+
+
+def foot_tip_height_local(env, scanner_cfg: SceneEntityCfg, asset_name: str = "robot") -> torch.Tensor:
+    """각 발끝 xy에 가장 가까운 scanner hit을 그 발의 지면으로 사용 -> (num_envs, 4), FOOT_NAMES 순서.
+
+    지형을 맞히지 못한 ray(inf)는 후보에서 제외한다. 그런 hit은 xy도 inf일 수 있어 cdist가 nan을
+    내므로 유한값으로 치환해 거리 계산에서 밀어낸다. 유효한 후보가 하나도 없으면 지면을 0으로 둔다.
+    """
+    tip_pos, _ = foot_tip_state(env, asset_name)
+    hits = env.scene.sensors[scanner_cfg.name].data.ray_hits_w          # (N, R, 3)
+    hit_z = hits[..., 2]
+    finite = torch.isfinite(hit_z)
+    xy = torch.where(finite.unsqueeze(-1), hits[..., :2], torch.full_like(hits[..., :2], 1.0e6))
+    idx = torch.cdist(tip_pos[..., :2], xy).argmin(dim=-1)              # (N, 4)
+    ground_z = hit_z.gather(1, idx)                                     # (N, 4)
+    ground_z = torch.where(torch.isfinite(ground_z), ground_z, torch.zeros_like(ground_z))
+    return tip_pos[..., 2] - ground_z
