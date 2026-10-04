@@ -312,13 +312,13 @@ class RewardsCfg:
 
     feet_air_time = RewTerm(
         func=mymdp.feet_air_time,
-        weight=5.0,
+        weight=2.0,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
             ),
-            "clamp_vxforward_height": 0.1,
+            "clamp_vxforward_height": 0.05,
             # "clamp_vxbackward_height": 0.1,
             # =======code edit=======
             # "max_air_time": 0.2,
