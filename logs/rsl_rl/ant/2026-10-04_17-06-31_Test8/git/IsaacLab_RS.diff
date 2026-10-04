@@ -1,0 +1,32 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_17-06-31_Test8/
+	source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant_v3.zip
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+index eda9410..87dc866 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+@@ -319,7 +319,7 @@ class RewardsCfg:
+                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
+             ),
+             "clamp_vxforward_height": 0.05,
+-            # "clamp_vxbackward_height": 0.1,
++            "clamp_vxbackward_height": 0.05,
+             # =======code edit=======
+             # "max_air_time": 0.2,
+             # Per-foot weight from the foot tip height instead of the binary touchdown flag:
