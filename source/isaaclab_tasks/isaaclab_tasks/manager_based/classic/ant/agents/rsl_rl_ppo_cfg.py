@@ -16,7 +16,7 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     experiment_name = "ant"
     # clip_actions = 1.5   # 추가
     policy = RslRlPpoActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=1.3,
         actor_obs_normalization=False,
         critic_obs_normalization=False,
         actor_hidden_dims=[400, 200, 100],
@@ -34,6 +34,6 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.01,
+        desired_kl=0.015,
         max_grad_norm=1.0,
     )
