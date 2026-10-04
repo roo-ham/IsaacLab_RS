@@ -319,7 +319,7 @@ class RewardsCfg:
                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
             ),
             "clamp_vxforward_height": 0.05,
-            # "clamp_vxbackward_height": 0.1,
+            # "clamp_vxbackward_height": 0.05,
             # =======code edit=======
             # "max_air_time": 0.2,
             # Per-foot weight from the foot tip height instead of the binary touchdown flag:
@@ -384,11 +384,11 @@ class RewardsCfg:
     # tip rises at lift_vel_ref, so the way out of a wall is to lift the foot.
     stumble_without_lift = RewTerm(
         func=mymdp.stumble_without_lift,
-        weight=-1.0,
+        weight=-5.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES), preserve_order=True),
             "ratio": 2.0,
-            "lift_vel_ref": 0.3,
+            "lift_vel_ref": 0.1,
         },
     )
     # =======code edit=======
