@@ -172,8 +172,8 @@ def mechanical_power(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -
 def feet_all_airborne(env, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
     """1 while none of the selected feet touches the ground (flight phase of a hop), else 0."""
     contact_sensor = env.scene.sensors[sensor_cfg.name]
-    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
-    return (~in_contact.any(dim=1)).float()
+    in_contact = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
+    return torch.amin(in_contact, dim=1)
 
 
 # =======code edit=======
