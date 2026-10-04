@@ -255,7 +255,7 @@ def stumble_without_lift(env, sensor_cfg: SceneEntityCfg, ratio: float, lift_vel
     sensor_cfg must list the feet in FOOT_NAMES order (preserve_order=True) to match the tip velocities.
     """
     forces = env.scene.sensors[sensor_cfg.name].data.net_forces_w[:, sensor_cfg.body_ids]
-    stumbling = -torch.clamp(forces[..., 0], max=0.0)
+    stumbling = torch.clamp(-forces[..., 0], 0.0, 1.0)
     _, tip_vel = foot_tip_state(env)
     not_lifting = 1.0 - torch.clamp(tip_vel[..., 2] / lift_vel_ref, 0.0, 1.0)
     return torch.sum(stumbling * not_lifting, dim=1)
