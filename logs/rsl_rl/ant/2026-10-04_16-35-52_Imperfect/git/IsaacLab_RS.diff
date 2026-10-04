@@ -1,0 +1,46 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_16-26-36_Test7/
+	logs/rsl_rl/ant/2026-10-04_16-35-52_Test7/
+	source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant_v3.zip
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+index ec414c1..94a09e2 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+@@ -34,6 +34,6 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+         schedule="adaptive",
+         gamma=0.99,
+         lam=0.95,
+-        desired_kl=0.03,
++        desired_kl=0.015,
+         max_grad_norm=1.0,
+     )
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+index 6f49210..2c7a2fb 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+@@ -255,7 +255,7 @@ def stumble_without_lift(env, sensor_cfg: SceneEntityCfg, ratio: float, lift_vel
+     sensor_cfg must list the feet in FOOT_NAMES order (preserve_order=True) to match the tip velocities.
+     """
+     forces = env.scene.sensors[sensor_cfg.name].data.net_forces_w[:, sensor_cfg.body_ids]
+-    stumbling = torch.clamp(-forces[..., 0], 0.0, 1.0)
++    stumbling = torch.clamp(-ratio * forces[..., 2]-forces[..., 0], 0.0, 1.0)
+     _, tip_vel = foot_tip_state(env)
+     not_lifting = 1.0 - torch.clamp(tip_vel[..., 2] / lift_vel_ref, 0.0, 1.0)
+     return torch.sum(stumbling * not_lifting, dim=1)
