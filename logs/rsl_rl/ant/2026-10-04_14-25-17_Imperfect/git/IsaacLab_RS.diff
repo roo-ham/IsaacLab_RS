@@ -1,0 +1,43 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_14-25-17_Test6/
+	source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant_v3.zip
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+index 13cefdd..aff60a0 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+@@ -147,14 +147,14 @@ def feet_air_time(
+         vx_forward = torch.clamp(tip_vel[..., 0][:, order], min=0.0)
+         vx_backward = torch.clamp(tip_vel[..., 0][:, order], max=0.0)
+         if clamp_vxforward_height is None:
+-            weight = torch.clamp(height, min=0.0, max=clamp_vxforward_height) * vx_forward
+-        else:
+             weight = torch.clamp(height, min=0.0) * vx_forward
+-        if clamp_vxbackward_height is None:
+-            weight += torch.clamp(height, min=0.0, max=clamp_vxbackward_height) * vx_backward
+         else:
++            weight = torch.clamp(height, min=0.0, max=clamp_vxforward_height) * vx_forward
++        if clamp_vxbackward_height is None:
+             weight += torch.clamp(height, min=0.0) * vx_backward
+-            
++        else:
++            weight += torch.clamp(height, min=0.0, max=clamp_vxbackward_height) * vx_backward
++
+         # 전진 + 공중 -> reward, 후진 + 공중 -> penalty
+ 
+     return torch.sum((current_air_time) * weight, dim=1)
