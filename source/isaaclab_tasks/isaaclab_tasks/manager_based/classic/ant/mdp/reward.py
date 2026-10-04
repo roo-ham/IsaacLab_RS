@@ -147,14 +147,14 @@ def feet_air_time(
         vx_forward = torch.clamp(tip_vel[..., 0][:, order], min=0.0)
         vx_backward = torch.clamp(tip_vel[..., 0][:, order], max=0.0)
         if clamp_vxforward_height is None:
-            weight = torch.clamp(height, min=0.0, max=clamp_vxforward_height) * vx_forward
-        else:
             weight = torch.clamp(height, min=0.0) * vx_forward
-        if clamp_vxbackward_height is None:
-            weight += torch.clamp(height, min=0.0, max=clamp_vxbackward_height) * vx_backward
         else:
+            weight = torch.clamp(height, min=0.0, max=clamp_vxforward_height) * vx_forward / clamp_vxforward_height
+        if clamp_vxbackward_height is None:
             weight += torch.clamp(height, min=0.0) * vx_backward
-            
+        else:
+            weight += torch.clamp(height, min=0.0, max=clamp_vxbackward_height) * vx_backward / clamp_vxbackward_height
+
         # 전진 + 공중 -> reward, 후진 + 공중 -> penalty
 
     return torch.sum((current_air_time) * weight, dim=1)
