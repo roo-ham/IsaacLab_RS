@@ -13,7 +13,13 @@ import torch
 import isaaclab.utils.math as math_utils
 from isaaclab.managers import SceneEntityCfg
 
-from .ant_foot_kinematics import AntFootKinematics, foot_tip_height
+from .ant_foot_kinematics import (
+    FOOT_NAMES,
+    AntFootKinematics,
+    foot_tip_height,
+    foot_tip_height_local,
+    foot_tip_state,
+)
 
 
 # =======code edit=======
@@ -94,20 +100,64 @@ def foot_clearance_reward(
 # =======code edit=======
 # max_air_time caps the paid air time, so long ballistic flights earn no more than a normal swing.
 def feet_air_time(
-    env, sensor_cfg: SceneEntityCfg, threshold: float, max_air_time: float | None = None
+    env,
+    sensor_cfg: SceneEntityCfg,
+    clamp_vxforward_height: float | None = None,
+    clamp_vxbackward_height: float | None = None,
+    scanner_cfg: SceneEntityCfg | None = None,
+    base_sensor_cfg: SceneEntityCfg | None = None,
+    reference_height: float | None = None,
 ) -> torch.Tensor:
     """Reward steps longer than threshold: sum of (last air time - threshold) at each touchdown.
 
     Same as velocity_rewards.feet_air_time without the command gate; the forward command is fixed,
     so the gate was always on.
+
+    The per-foot weight can instead come from the foot tip height rather than the binary touchdown flag.
+    Passing scanner_cfg together with either base_sensor_cfg or reference_height switches to that mode:
+
+        weight = clamp(foot_tip_height_local, min=0) / reference_height
+
+    so it is 0 with the tip on its local ground, 1 once the tip reaches reference_height, and linear
+    (not capped) above that. reference_height defaults to the torso height above the mean terrain, i.e.
+    the base-to-ground distance; pass a float to pin it to a constant. Note the ant's foot can only rise
+    to roughly (torso height - 0.32 m) because the ankle stops at |30 deg|, so with the torso at 0.6 m
+    the weight saturates near 0.45 unless a smaller reference_height is given.
+
+    foot_tip_height_local returns FOOT_NAMES order while sensor_cfg.body_ids follow the contact sensor's
+    own body order, so the height array is re-mapped here; sensor_cfg does not need preserve_order=True.
     """
     contact_sensor = env.scene.sensors[sensor_cfg.name]
-    first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
-    last_air_time = contact_sensor.data.last_air_time[:, sensor_cfg.body_ids]
+    current_air_time = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
     # =======code edit=======
-    if max_air_time is not None:
-        last_air_time = torch.clamp(last_air_time, max=max_air_time)
-    return torch.sum((last_air_time - threshold) * first_contact, dim=1)
+    # if max_air_time is not None:
+    #     current_air_time = torch.clamp(current_air_time, max=max_air_time)
+
+    if scanner_cfg is None or (base_sensor_cfg is None and reference_height is None):
+        # original behaviour: an impulse at each touchdown
+        weight = contact_sensor.compute_first_contact(env.step_dt)[:, sensor_cfg.body_ids]
+    else:
+        # =======code edit=======
+        # Continuous height weight in place of the touchdown impulse.
+        height = foot_tip_height_local(env, scanner_cfg)  # (num_envs, 4), FOOT_NAMES order
+        foot_index = {name: i for i, name in enumerate(FOOT_NAMES)}
+        order = [foot_index[contact_sensor.body_names[b]] for b in sensor_cfg.body_ids]
+        height = height[:, order]
+        _, tip_vel = foot_tip_state(env)
+        vx_forward = torch.clamp(tip_vel[..., 0][:, order], min=0.0)
+        vx_backward = torch.clamp(tip_vel[..., 0][:, order], max=0.0)
+        if clamp_vxforward_height is None:
+            weight = torch.clamp(height, min=0.0, max=clamp_vxforward_height) * vx_forward
+        else:
+            weight = torch.clamp(height, min=0.0) * vx_forward
+        if clamp_vxbackward_height is None:
+            weight += torch.clamp(height, min=0.0, max=clamp_vxbackward_height) * vx_backward
+        else:
+            weight += torch.clamp(height, min=0.0) * vx_backward
+            
+        # 전진 + 공중 -> reward, 후진 + 공중 -> penalty
+
+    return torch.sum((current_air_time) * weight, dim=1)
 
 
 # =======code edit=======
@@ -152,23 +202,9 @@ def feet_stumble(env, sensor_cfg: SceneEntityCfg, ratio: float) -> torch.Tensor:
 
 
 # =======code edit=======
-def foot_tip_state(env, asset_name: str = "robot") -> tuple[torch.Tensor, torch.Tensor]:
-    """World position and linear velocity of each foot tip, each (num_envs, 4, 3) in FOOT_NAMES order.
-
-    The tip offsets in the foot-link frame come from the USD collision shapes (AntFootKinematics, built once
-    and cached on the env); position and velocity follow from the simulated link pose and twist.
-    """
-    fk = getattr(env, "_ant_foot_fk", None)
-    if fk is None:
-        fk = AntFootKinematics(env, asset_name)
-        env._ant_foot_fk = fk
-    asset = env.scene[asset_name]
-    ids = fk.foot_body_ids
-    offsets = torch.stack(fk.tip_offsets).unsqueeze(0).expand(asset.num_instances, -1, -1)
-    r = math_utils.quat_apply(asset.data.body_link_quat_w[:, ids], offsets)  # link origin -> tip, world frame
-    tip_pos = asset.data.body_link_pos_w[:, ids] + r
-    tip_vel = asset.data.body_link_lin_vel_w[:, ids] + torch.cross(asset.data.body_link_ang_vel_w[:, ids], r, dim=-1)
-    return tip_pos, tip_vel
+# foot_tip_state now lives in ant_foot_kinematics.py, next to the FK it belongs to. It used to be defined
+# here, but foot_tip_height_local (also in ant_foot_kinematics.py) calls it, and importing it back from
+# this module would be circular. It is imported at the top of this file instead.
 
 
 # =======code edit=======
