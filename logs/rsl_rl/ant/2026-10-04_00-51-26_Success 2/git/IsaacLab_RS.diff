@@ -1,0 +1,68 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_00-28-07_Test21/
+	logs/rsl_rl/ant/2026-10-04_00-29-18_Test21/
+	logs/rsl_rl/ant/2026-10-04_00-48-36_Test21/
+	logs/rsl_rl/ant/2026-10-04_00-51-26_Test21/
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+index a2a9171..020f534 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py
+@@ -16,7 +16,7 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+     experiment_name = "ant"
+     # clip_actions = 1.5   # 추가
+     policy = RslRlPpoActorCriticCfg(
+-        init_noise_std=1.0,
++        init_noise_std=1.5,
+         actor_obs_normalization=False,
+         critic_obs_normalization=False,
+         actor_hidden_dims=[400, 200, 100],
+@@ -34,6 +34,6 @@ class AntPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+         schedule="adaptive",
+         gamma=0.99,
+         lam=0.95,
+-        desired_kl=0.01,
++        desired_kl=0.02,
+         max_grad_norm=1.0,
+     )
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+index c5179b0..b8e854f 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+@@ -277,7 +277,7 @@ class RewardsCfg:
+     # upright = RewTerm(func=mdp.upright_posture_bonus, weight=0.1, params={"threshold": 0.93})
+     # (4) Reward for moving in the right direction
+     move_to_target = RewTerm(
+-        func=mdp.move_to_target_bonus, weight=1.0, params={"threshold": 0.8, "target_pos": (1000.0, 0.0, 0.0)}
++        func=mdp.move_to_target_bonus, weight=0.1, params={"threshold": 0.8, "target_pos": (1000.0, 0.0, 0.0)}
+     )
+     # (5) Penalty for large action commands
+     # action_l2 = RewTerm(func=mdp.action_l2, weight=-0.005)
+@@ -318,9 +318,9 @@ class RewardsCfg:
+                 "contact_forces",
+                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
+             ),
+-            "threshold": 0.25,
++            "threshold": 0.1,
+             # =======code edit=======
+-            "max_air_time": 0.5,
++            "max_air_time": 0.2,
+         },
+     )
+     # Swing foot-tip height above local terrain (torso FK). A standing tip reads ~0.04 m, so 0.29 m
