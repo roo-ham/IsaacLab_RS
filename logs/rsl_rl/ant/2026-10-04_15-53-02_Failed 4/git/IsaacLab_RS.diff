@@ -1,0 +1,61 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_15-53-02_Test7/
+	source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant_v3.zip
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+index ee91327..adec750 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+@@ -403,7 +403,7 @@ class RewardsCfg:
+     # speed should come from pushing against the ground. Being airborne the whole time costs 2/s.
+     feet_all_airborne = RewTerm(
+         func=mymdp.feet_all_airborne,
+-        weight=-2.0,
++        weight=-5.0,
+         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES))},
+     )
+ 
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+index 1b98f71..1b081e7 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+@@ -172,8 +172,8 @@ def mechanical_power(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -
+ def feet_all_airborne(env, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+     """1 while none of the selected feet touches the ground (flight phase of a hop), else 0."""
+     contact_sensor = env.scene.sensors[sensor_cfg.name]
+-    in_contact = contact_sensor.data.current_contact_time[:, sensor_cfg.body_ids] > 0.0
+-    return (~in_contact.any(dim=1)).float()
++    in_contact = contact_sensor.data.current_air_time[:, sensor_cfg.body_ids]
++    return torch.amin(in_contact, dim=1)
+ 
+ 
+ # =======code edit=======
+@@ -255,10 +255,10 @@ def stumble_without_lift(env, sensor_cfg: SceneEntityCfg, ratio: float, lift_vel
+     sensor_cfg must list the feet in FOOT_NAMES order (preserve_order=True) to match the tip velocities.
+     """
+     forces = env.scene.sensors[sensor_cfg.name].data.net_forces_w[:, sensor_cfg.body_ids]
+-    stumbling = torch.norm(forces[..., :2], dim=-1) > ratio * torch.abs(forces[..., 2])
++    stumbling = -torch.clamp(forces[..., 0], max=0.0)
+     _, tip_vel = foot_tip_state(env)
+     not_lifting = 1.0 - torch.clamp(tip_vel[..., 2] / lift_vel_ref, 0.0, 1.0)
+-    return torch.sum(stumbling.float() * not_lifting, dim=1)
++    return torch.sum(stumbling * not_lifting, dim=1)
+ 
+ 
+ # =======code edit=======
