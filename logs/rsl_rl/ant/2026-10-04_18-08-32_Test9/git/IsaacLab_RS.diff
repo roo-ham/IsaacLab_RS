@@ -1,0 +1,90 @@
+--- git status ---
+On branch group_ten
+Your branch is up to date with 'origin/group_ten'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+	modified:   source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	dsh-probe2.txt
+	logs/rsl_rl/ant/2026-10-04_17-06-31_Test8/
+	logs/rsl_rl/ant/2026-10-04_17-32-46_Test8/
+	logs/rsl_rl/ant/2026-10-04_17-39-19_Test8/
+	logs/rsl_rl/ant/2026-10-04_17-46-26_Test8/
+	logs/rsl_rl/ant/2026-10-04_17-54-13_Test8/
+	logs/rsl_rl/ant/2026-10-04_18-01-44_Test8/
+	logs/rsl_rl/ant/2026-10-04_18-08-32_Test9/
+	source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant_v3.zip
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+index eda9410..c8b060c 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py
+@@ -128,9 +128,9 @@ class MySceneCfg(InteractiveSceneCfg):
+     robot.actuators = {
+         "body": IdealPDActuatorCfg(
+             joint_names_expr=[".*"],
+-            stiffness=10.0,
++            stiffness=20.0,
+             damping=1.0,
+-            effort_limit=4.0,
++            effort_limit=10.0,
+         ),
+     }
+     height_scanner = RayCasterCfg(
+@@ -319,7 +319,7 @@ class RewardsCfg:
+                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
+             ),
+             "clamp_vxforward_height": 0.05,
+-            # "clamp_vxbackward_height": 0.1,
++            # "clamp_vxbackward_height": 0.05,
+             # =======code edit=======
+             # "max_air_time": 0.2,
+             # Per-foot weight from the foot tip height instead of the binary touchdown flag:
+@@ -384,11 +384,11 @@ class RewardsCfg:
+     # tip rises at lift_vel_ref, so the way out of a wall is to lift the foot.
+     stumble_without_lift = RewTerm(
+         func=mymdp.stumble_without_lift,
+-        weight=-1.0,
++        weight=-5.0,
+         params={
+             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES), preserve_order=True),
+             "ratio": 2.0,
+-            "lift_vel_ref": 0.3,
++            "lift_vel_ref": 0.1,
+         },
+     )
+     # =======code edit=======
+@@ -403,7 +403,7 @@ class RewardsCfg:
+     # speed should come from pushing against the ground. Being airborne the whole time costs 2/s.
+     feet_all_airborne = RewTerm(
+         func=mymdp.feet_all_airborne,
+-        weight=-10.0,
++        weight=-20.0,
+         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES))},
+     )
+ 
+diff --git a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+index 2c7a2fb..d12769d 100644
+--- a/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
++++ b/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py
+@@ -255,9 +255,9 @@ def stumble_without_lift(env, sensor_cfg: SceneEntityCfg, ratio: float, lift_vel
+     sensor_cfg must list the feet in FOOT_NAMES order (preserve_order=True) to match the tip velocities.
+     """
+     forces = env.scene.sensors[sensor_cfg.name].data.net_forces_w[:, sensor_cfg.body_ids]
+-    stumbling = torch.clamp(-ratio * forces[..., 2]-forces[..., 0], 0.0, 1.0)
++    stumbling = torch.clamp(-ratio * forces[..., 2]-forces[..., 0], 0.0, 5.0)
+     _, tip_vel = foot_tip_state(env)
+-    not_lifting = 1.0 - torch.clamp(tip_vel[..., 2] / lift_vel_ref, 0.0, 1.0)
++    not_lifting = 1.0 - torch.clamp(tip_vel[..., 2] / lift_vel_ref, -1.0, 1.0)
+     return torch.sum(stumbling * not_lifting, dim=1)
+ 
+ 
