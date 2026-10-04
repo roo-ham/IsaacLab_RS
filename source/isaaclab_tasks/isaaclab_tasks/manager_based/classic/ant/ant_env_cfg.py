@@ -128,9 +128,9 @@ class MySceneCfg(InteractiveSceneCfg):
     robot.actuators = {
         "body": IdealPDActuatorCfg(
             joint_names_expr=[".*"],
-            stiffness=10.0,
+            stiffness=20.0,
             damping=1.0,
-            effort_limit=4.0,
+            effort_limit=10.0,
         ),
     }
     height_scanner = RayCasterCfg(
