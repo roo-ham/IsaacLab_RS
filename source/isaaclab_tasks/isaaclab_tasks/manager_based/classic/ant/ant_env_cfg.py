@@ -384,7 +384,7 @@ class RewardsCfg:
     # tip rises at lift_vel_ref, so the way out of a wall is to lift the foot.
     stumble_without_lift = RewTerm(
         func=mymdp.stumble_without_lift,
-        weight=-0.5,
+        weight=-1.0,
         params={
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES), preserve_order=True),
             "ratio": 2.0,
@@ -403,7 +403,7 @@ class RewardsCfg:
     # speed should come from pushing against the ground. Being airborne the whole time costs 2/s.
     feet_all_airborne = RewTerm(
         func=mymdp.feet_all_airborne,
-        weight=-5.0,
+        weight=-10.0,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=list(FOOT_NAMES))},
     )
 
