@@ -277,7 +277,7 @@ class RewardsCfg:
     # upright = RewTerm(func=mdp.upright_posture_bonus, weight=0.1, params={"threshold": 0.93})
     # (4) Reward for moving in the right direction
     move_to_target = RewTerm(
-        func=mdp.move_to_target_bonus, weight=1.0, params={"threshold": 0.8, "target_pos": (1000.0, 0.0, 0.0)}
+        func=mdp.move_to_target_bonus, weight=0.01, params={"threshold": 0.8, "target_pos": (1000.0, 0.0, 0.0)}
     )
     # (5) Penalty for large action commands
     # action_l2 = RewTerm(func=mdp.action_l2, weight=-0.005)
@@ -312,15 +312,24 @@ class RewardsCfg:
 
     feet_air_time = RewTerm(
         func=mymdp.feet_air_time,
-        weight=1.0,
+        weight=5.0,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
                 body_names=["front_left_foot", "front_right_foot", "left_back_foot", "right_back_foot"],
             ),
-            "threshold": 0.25,
+            "clamp_vxforward_height": 0.1,
+            # "clamp_vxbackward_height": 0.1,
             # =======code edit=======
-            "max_air_time": 0.5,
+            # "max_air_time": 0.2,
+            # Per-foot weight from the foot tip height instead of the binary touchdown flag:
+            #   0 with the tip on its local ground (nearest foothold_scanner hit),
+            #   1 once the tip reaches the reference height, linear (uncapped) above that.
+            # The reference defaults to the torso height above the mean terrain; pin it with
+            # "reference_height": <float> instead of base_sensor_cfg. body_ids need no preserve_order,
+            # feet_air_time re-maps the FOOT_NAMES-ordered heights onto the contact sensor's order.
+            "scanner_cfg": SceneEntityCfg("foothold_scanner"),
+            "base_sensor_cfg": SceneEntityCfg("height_scanner"),
         },
     )
     # Swing foot-tip height above local terrain (torso FK). A standing tip reads ~0.04 m, so 0.29 m
