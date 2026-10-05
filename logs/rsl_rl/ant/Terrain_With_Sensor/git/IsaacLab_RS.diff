@@ -1,0 +1,12 @@
+--- git status ---
+On branch legacy_sensor
+Your branch is up to date with 'origin/legacy_sensor'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	logs/rsl_rl/ant/2026-10-05_19-16-02_Terrain_With_Sensor/
+
+nothing added to commit but untracked files present (use "git add" to track) 
+
+
+--- git diff ---
