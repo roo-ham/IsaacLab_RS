@@ -23,10 +23,16 @@ import isaaclab_tasks.manager_based.classic.humanoid.mdp as mdp
 import math
 
 # =======code edit=======
-# The terrain curriculum term lives in ant/mdp (non-reward; the branch trains without sensors).
+# The terrain curriculum and terrain-relative height terms live in ant/mdp (non-reward).
 import isaaclab_tasks.manager_based.classic.ant.mdp as mymdp
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG  # isort: skip
+
+# =======code edit=======
+# Sensors: the height scanner (torso height above the terrain), the wider foothold scanner (where the
+# feet land, fed to the policy as the terrain height scan) and the contact sensor (foot air time).
+from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
+from isaaclab.markers.config import RAY_CASTER_MARKER_CFG
 
 ##
 # Pre-defined configs
@@ -54,8 +60,9 @@ class MySceneCfg(InteractiveSceneCfg):
 
     # terrain
     # =======code edit=======
-    # Generated rough terrain. No sensors are attached to the scene: the task is trained without any,
-    # so the policy sees the terrain only through proprioception and the reward.
+    # Generated rough terrain, with the same sensors as the group_ten branch: the policy observes the
+    # terrain through the foothold scan below, and the height scanner gives the torso height above the
+    # terrain rather than world z.
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
@@ -79,11 +86,13 @@ class MySceneCfg(InteractiveSceneCfg):
     # robot
     robot = ANT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     # =======code edit=======
+    # Contact reporting is required by the contact sensor below (foot air time), as on group_ten.
+    robot.spawn.activate_contact_sensors = True
+    # =======code edit=======
     # Joint PD for position control (ANT_CFG has stiffness=damping=0, i.e. pure torque control). The Ant
     # weighs 0.91 kg and one ankle holds ~1 Nm when standing, while effort control reached 5-15 Nm in
     # kicks: stiffness 20 Nm/rad sags ~0.05 rad under that load and effort_limit 10 Nm (~10x standing
-    # torque) leaves room for climbing. Same actuators as the group_ten branch; only the contact-sensor
-    # switch (robot.spawn.activate_contact_sensors) is left out, since this branch has no sensors.
+    # torque) leaves room for climbing. Same actuators as the group_ten branch.
     robot.actuators = {
         "body": IdealPDActuatorCfg(
             joint_names_expr=[".*"],
@@ -92,6 +101,35 @@ class MySceneCfg(InteractiveSceneCfg):
             effort_limit=10.0,
         ),
     }
+    # =======code edit=======
+    # Torso height above the terrain under it (1.2 m x 1.2 m at 0.1 m resolution).
+    height_scanner = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/torso",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.1, size=[1.2, 1.2]),
+        mesh_prim_paths=["/World/ground"],
+        debug_vis=False,
+    )
+    # =======code edit=======
+    # Wider scan for the policy to see where its feet land: the tips touch down 0.94-1.07 m from the
+    # torso, outside the +-0.6 m height_scanner. 2.4 m x 2.4 m at 0.15 m = 17 x 17 = 289 rays. This is
+    # the scan the policy observes as terrain_height_scan.
+    foothold_scanner = RayCasterCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/torso",
+        offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 0.0)),
+        ray_alignment="yaw",
+        pattern_cfg=patterns.GridPatternCfg(resolution=0.15, size=[2.4, 2.4]),
+        mesh_prim_paths=["/World/ground"],
+        debug_vis=False,
+        visualizer_cfg=RAY_CASTER_MARKER_CFG.replace(prim_path="/Visuals/FootholdScanner"),
+    )
+    contact_forces = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/.*",
+        history_length=3,
+        track_air_time=True,
+        force_threshold=1.0,
+    )
 
     # lights
     light = AssetBaseCfg(
@@ -124,7 +162,10 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for the policy."""
 
-        base_height = ObsTerm(func=mdp.base_pos_z)
+        # base_height = ObsTerm(func=mdp.base_pos_z)
+        # =======code edit=======
+        # Torso height above the terrain, not world z, so it means the same on every sub-terrain.
+        base_height = ObsTerm(func=mymdp.torso_height_obs, params={"sensor_cfg": SceneEntityCfg("height_scanner")})
         base_lin_vel = ObsTerm(func=mdp.base_lin_vel)
         base_ang_vel = ObsTerm(func=mdp.base_ang_vel)
         base_yaw_roll = ObsTerm(func=mdp.base_yaw_roll)
@@ -142,6 +183,16 @@ class ObservationsCfg:
                 )
             },
         )
+
+        # =======code edit=======
+        # Terrain scan supplies ground-relative height: 289 values from the foothold scanner, the only
+        # observation that sees the terrain itself (same term and sensor as the group_ten branch).
+        terrain_height_scan = ObsTerm(
+            func=mdp.height_scan,
+            params={"sensor_cfg": SceneEntityCfg("foothold_scanner"), "offset": 0.0},
+            clip=(-1.0, 1.0),
+        )
+
         actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
@@ -239,7 +290,8 @@ class AntEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the MuJoCo-style Ant walking environment."""
 
     # Scene settings
-    scene: MySceneCfg = MySceneCfg(num_envs=4096, env_spacing=5.0, clone_in_fabric=True)
+    # Contact sensors need real USD prims for every env; fabric cloning only creates env_0 in USD.
+    scene: MySceneCfg = MySceneCfg(num_envs=4096, env_spacing=5.0, clone_in_fabric=False)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -263,6 +315,15 @@ class AntEnvCfg(ManagerBasedRLEnvCfg):
         # The generated terrain brings its own material (multiply combine modes); keep the simulation
         # default aligned with it.
         self.sim.physics_material = self.scene.terrain.physics_material
+        # =======code edit=======
+        # Tick the sensors at the rates they need (same as the group_ten branch): the scanners once per
+        # control step, the contact sensor at the physics rate.
+        if self.scene.height_scanner is not None:
+            self.scene.height_scanner.update_period = self.decimation * self.sim.dt
+        if self.scene.foothold_scanner is not None:
+            self.scene.foothold_scanner.update_period = self.decimation * self.sim.dt
+        if self.scene.contact_forces is not None:
+            self.scene.contact_forces.update_period = self.sim.dt
         # default friction material
         self.sim.physics_material.static_friction = 1.0
         self.sim.physics_material.dynamic_friction = 1.0

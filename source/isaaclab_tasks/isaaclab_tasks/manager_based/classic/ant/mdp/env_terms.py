@@ -4,12 +4,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # =======code edit=======
-"""Non-reward MDP terms for the Ant rough-terrain task (terrain curriculum, friction randomization).
+"""Non-reward MDP terms for the Ant rough-terrain task.
 
-The bodies of :func:`terrain_levels_speed` and :func:`randomize_discrete_friction` are copied verbatim
-from the group_ten branch, where the rough terrain and the domain randomization were set up. Neither is
-a reward function and neither reads a sensor: the curriculum moves each robot between terrain rows from
-the episode that just ended, and the friction event writes a material property on the robot.
+The bodies of these terms are copied verbatim from the group_ten branch, where the rough terrain, its
+curriculum, the domain randomization and the sensor-based observations were set up. None of them is a
+reward function: :func:`torso_height_obs` is the terrain-relative height observation (height scanner),
+:func:`terrain_levels_speed` is the terrain curriculum and :func:`randomize_discrete_friction` is the
+friction randomization.
 """
 
 from __future__ import annotations
@@ -18,7 +19,32 @@ import torch
 
 from isaaclab.managers import SceneEntityCfg
 
-__all__ = ["randomize_discrete_friction", "terrain_levels_speed"]
+__all__ = [
+    "randomize_discrete_friction",
+    "terrain_levels_speed",
+    "torso_height_above_ground",
+    "torso_height_obs",
+]
+
+
+# =======code edit=======
+def torso_height_above_ground(env, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Torso height above the terrain under it, shape (num_envs,).
+
+    The ground level is the mean of the height-scanner hits; rays that missed the terrain (inf) are
+    ignored. World z alone is wrong on generated terrain, whose sub-terrains (e.g. inverted pyramids)
+    can sit below z = 0.
+    """
+    scanner = env.scene.sensors[sensor_cfg.name]
+    hits_z = scanner.data.ray_hits_w[..., 2]
+    finite = torch.isfinite(hits_z)
+    ground_z = torch.where(finite, hits_z, 0.0).sum(dim=1) / finite.sum(dim=1).clamp(min=1)
+    return scanner.data.pos_w[:, 2] - ground_z
+
+
+def torso_height_obs(env, sensor_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Torso height above the terrain as a (num_envs, 1) observation."""
+    return torso_height_above_ground(env, sensor_cfg).unsqueeze(-1)
 
 
 # =======code edit=======
