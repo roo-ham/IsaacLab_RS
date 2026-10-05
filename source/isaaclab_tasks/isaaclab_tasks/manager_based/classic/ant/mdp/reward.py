@@ -342,8 +342,10 @@ def log_episode_reward_stats(env, env_ids) -> None:
     Called on every environment reset, but it only reports once all environments have finished their
     first episode (the point at which the play scripts stop), then starts a new sweep.
 
-    The episode returns are the reward manager's own episodic sums (term value x weight x dt, the
-    quantity logged as ``Episode_Reward/<term>``), one value per environment:
+    The episode returns are the reward manager's own episodic sums (term value x weight x dt), one
+    value per environment. Note that the trainer logs those sums divided by ``max_episode_length_s``
+    (16 s here) as ``Episode_Reward/<term>``, so a TensorBoard value is not directly the
+    ep_return_mean printed here:
 
         ep_return_mean / ep_return_std: mean and standard deviation across environments
         step_mean:                      the reward function's own per-step output, i.e. the weight

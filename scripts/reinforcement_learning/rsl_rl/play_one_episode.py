@@ -187,6 +187,40 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     episode_rewards = torch.zeros(env.num_envs, dtype=torch.float64, device=env.device)
     episode_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     finished = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    # =======code edit=======
+    # The reported episode reward total is computed with the reward functions and weights of the
+    # reference (cailab) version, commit e83a5d2f11ca1b5f03b690e1978479e620c500e2, instead of the task
+    # rewards this branch keeps retuning (see ant/mdp/reference_reward.py). The extra RewardManager
+    # below evaluates that definition on every step; the task's own reward is reported next to it and
+    # remains the reward the environment and the policy use.
+    reference_manager = None
+    reference_episode_rewards = torch.zeros(env.num_envs, dtype=torch.float64, device=env.device)
+    reference_step_rewards = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+    reference_term_sums = torch.zeros((env.num_envs, 0), dtype=torch.float64, device=env.device)
+    reference_recorded = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    if "isaac-ant" in (args_cli.task or "").lower():
+        from isaaclab_tasks.manager_based.classic.ant.mdp.reference_reward import (
+            REFERENCE_COMMIT,
+            reference_reward_manager as build_reference_reward_manager,
+        )
+
+        reference_manager = build_reference_reward_manager(env.unwrapped)
+        reference_term_sums = torch.zeros(
+            (env.num_envs, len(reference_manager.active_terms)), dtype=torch.float64, device=env.device
+        )
+        # The environment computes the task reward before it resets the environments that finished, so
+        # the reference reward has to be evaluated in that same instant: once env.step() returns, such
+        # an environment already stands at its reset pose and progress_reward would read the potential
+        # jump across the reset. Hooking the task reward's compute() is exactly that instant.
+        task_reward_compute = env.unwrapped.reward_manager.compute
+
+        def _compute_task_and_reference_reward(dt):
+            task_reward = task_reward_compute(dt)
+            reference_step_rewards[:] = reference_manager.compute(dt)
+            return task_reward
+
+        env.unwrapped.reward_manager.compute = _compute_task_and_reference_reward
+        print(f"[INFO] Episode reward total uses the reward definition of commit {REFERENCE_COMMIT[:12]}.")
     # simulate environment
     while simulation_app.is_running():
         start_time = time.time()
@@ -199,8 +233,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # Include the terminal step, then ignore auto-reset episodes for finished environments.
             active = ~finished
             episode_rewards[active] += rewards[active]
+            # =======code edit=======
+            if reference_manager is not None:
+                reference_episode_rewards[active] += reference_step_rewards[active].to(dtype=torch.float64)
             episode_steps[active] += 1
             finished |= dones.bool()
+            # =======code edit=======
+            # Close the reference episodes of the environments the environment just reset. Their episodic
+            # sums now hold the finished episode, terminal step included, because the reference reward is
+            # computed above, before the reset. Only the first episode of an environment is recorded.
+            if reference_manager is not None:
+                reset_ids = dones.nonzero(as_tuple=False).squeeze(-1)
+                if len(reset_ids) > 0:
+                    first_episode = reset_ids[~reference_recorded[reset_ids]]
+                    if len(first_episode) > 0:
+                        for term_index, term_name in enumerate(reference_manager.active_terms):
+                            reference_term_sums[first_episode, term_index] = reference_manager._episode_sums[
+                                term_name
+                            ][first_episode].to(dtype=torch.float64)
+                        reference_recorded[first_episode] = True
+                    reference_manager.reset(reset_ids)
         timestep += 1
 
         # Wait for the first episode of every environment to finish.
@@ -222,16 +274,40 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     print(f"[INFO] Completed first episodes: {completed}/{env.num_envs}")
     if completed != env.num_envs:
         print("[INFO] Statistics include partial episodes for unfinished environments.")
+
+    # =======code edit=======
+    # Reward totals of the first episode, as a single value for one environment and as mean/std across
+    # environments otherwise. The unlabeled "Episode reward total" is the reference (cailab) definition.
+    def _print_reward_total(label: str, values: torch.Tensor) -> None:
+        if env.num_envs == 1:
+            print(f"[RESULT] {label}: {values[0].item():.6f}")
+        else:
+            # Population standard deviation across the evaluated environments.
+            print(
+                f"[RESULT] {label}: mean={values.mean().item():.6f}, "
+                f"std={values.std(unbiased=False).item():.6f}"
+            )
+
+    if reference_manager is not None:
+        _print_reward_total("Episode reward total", reference_episode_rewards)
+        _print_reward_total("Episode reward total (task reward, this branch)", episode_rewards)
+        if reference_recorded.any():
+            print("[RESULT] Episode reward terms (reference definition, first episode, mean/std across environments):")
+            for term_index, term_name in enumerate(reference_manager.active_terms):
+                term_values = reference_term_sums[reference_recorded, term_index]
+                weight = reference_manager.get_term_cfg(term_name).weight
+                print(
+                    f"[RESULT]   {term_name:<18}weight={weight:>8.4g}  mean={term_values.mean().item():>12.6f}"
+                    f"  std={term_values.std(unbiased=False).item():>12.6f}"
+                )
+    else:
+        _print_reward_total("Episode reward total", episode_rewards)
+
     if env.num_envs == 1:
-        print(f"[RESULT] Episode reward total: {episode_rewards[0].item():.6f}")
         print(f"[RESULT] Episode steps: {episode_steps[0].item()}")
     else:
         # Population standard deviation across the evaluated environments.
         steps = episode_steps.to(dtype=torch.float64)
-        print(
-            f"[RESULT] Episode reward total: mean={episode_rewards.mean().item():.6f}, "
-            f"std={episode_rewards.std(unbiased=False).item():.6f}"
-        )
         print(
             f"[RESULT] Episode steps: mean={steps.mean().item():.6f}, "
             f"std={steps.std(unbiased=False).item():.6f}"
