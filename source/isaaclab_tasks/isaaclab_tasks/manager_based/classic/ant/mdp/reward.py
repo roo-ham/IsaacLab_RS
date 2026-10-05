@@ -8,6 +8,10 @@
 
 from __future__ import annotations
 
+# =======code edit=======
+import os
+import sys
+
 import torch
 
 import isaaclab.utils.math as math_utils
@@ -307,3 +311,94 @@ def terrain_levels_speed(
     move_down = (fell | (avg_speed < down_speed)) & ~move_up
     terrain.update_env_origins(env_ids, move_up, move_down)
     return torch.mean(terrain.terrain_levels.float())
+
+
+# =======code edit=======
+# ------------------------------------------------------------------------------------------------
+# Per-reward-term episode statistics for evaluation runs (play_one_episode.py / play.py).
+#
+# Wired as EventCfg.reward_stats (mode="reset") in ant_env_cfg.py. A reset event runs inside
+# ManagerBasedRLEnv._reset_idx BEFORE RewardManager.reset(), so at this point
+# reward_manager._episode_sums still holds the finished episode's per-term returns, and
+# episode_length_buf still holds the finished episode length (it is zeroed once the managers have
+# run). That length also filters out the reset triggered while the environment is constructed.
+# ------------------------------------------------------------------------------------------------
+
+
+def _reward_stats_enabled() -> bool:
+    """Whether the per-reward-term statistics are reported: on for the play scripts, env var overrides."""
+    # ANT_REWARD_STATS=1/0 forces the report on/off, e.g. for a custom evaluation script
+    override = os.environ.get("ANT_REWARD_STATS")
+    if override is not None:
+        return override.strip().lower() not in ("", "0", "false", "no")
+    # training (train.py) must keep its console output unchanged, so only the play scripts report
+    entry_script = os.path.basename(getattr(sys.modules.get("__main__"), "__file__", "") or "")
+    return entry_script.startswith("play")
+
+
+def log_episode_reward_stats(env, env_ids) -> None:
+    """Print the mean and standard deviation of every reward term's episode return.
+
+    Called on every environment reset, but it only reports once all environments have finished their
+    first episode (the point at which the play scripts stop), then starts a new sweep.
+
+    The episode returns are the reward manager's own episodic sums (term value x weight x dt, the
+    quantity logged as ``Episode_Reward/<term>``), one value per environment:
+
+        ep_return_mean / ep_return_std: mean and standard deviation across environments
+        step_mean:                      the reward function's own per-step output, i.e. the weight
+                                        and the time-step divided back out
+        TOTAL:                          sum over all reward terms, comparable to the episode reward
+                                        total printed by the play script
+    """
+    if not _reward_stats_enabled():
+        return
+
+    reward_manager = env.reward_manager
+    term_names = reward_manager.active_terms
+    store = getattr(env, "_ant_reward_stats", None)
+    if store is None:
+        store = {
+            "sums": torch.zeros((env.num_envs, len(term_names)), dtype=torch.float64, device=env.device),
+            "steps": torch.zeros(env.num_envs, dtype=torch.float64, device=env.device),
+            "recorded": torch.zeros(env.num_envs, dtype=torch.bool, device=env.device),
+        }
+        setattr(env, "_ant_reward_stats", store)
+
+    ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device)
+    lengths = env.episode_length_buf[ids].to(dtype=torch.float64)
+    is_new = (lengths > 0.0) & ~store["recorded"][ids]
+    if bool(is_new.any()):
+        new_ids = ids[is_new]
+        for column, name in enumerate(term_names):
+            store["sums"][new_ids, column] = reward_manager._episode_sums[name][new_ids].to(dtype=torch.float64)
+        store["steps"][new_ids] = lengths[is_new]
+        store["recorded"][new_ids] = True
+
+    # report once every environment has finished its first episode, then start a new sweep
+    if not bool(store["recorded"].all()):
+        return
+    setattr(env, "_ant_reward_stats", None)
+
+    returns = store["sums"]  # (num_envs, num_terms)
+    steps = store["steps"].clamp(min=1.0)
+    weights = torch.tensor(
+        [reward_manager.get_term_cfg(name).weight for name in term_names], dtype=torch.float64, device=env.device
+    )
+    mean = returns.mean(dim=0)
+    std = returns.std(dim=0, unbiased=False)
+    step_mean = returns / (weights.unsqueeze(0) * env.step_dt * steps.unsqueeze(-1)).clamp(min=1.0e-12)
+    step_mean[:, weights == 0.0] = float("nan")
+    total = returns.sum(dim=1)
+
+    print(f"[REWARD-STATS] First episode of {env.num_envs} environments (mean/std across environments):")
+    print(f"[REWARD-STATS] {'reward term':<28}{'weight':>10}{'ep_return_mean':>16}{'ep_return_std':>15}{'step_mean':>12}")
+    for column, name in enumerate(term_names):
+        print(
+            f"[REWARD-STATS] {name:<28}{weights[column].item():>10.4g}{mean[column].item():>16.6f}"
+            f"{std[column].item():>15.6f}{step_mean[:, column].mean().item():>12.6f}"
+        )
+    print(
+        f"[REWARD-STATS] {'TOTAL':<28}{'':>10}{total.mean().item():>16.6f}"
+        f"{total.std(unbiased=False).item():>15.6f}"
+    )

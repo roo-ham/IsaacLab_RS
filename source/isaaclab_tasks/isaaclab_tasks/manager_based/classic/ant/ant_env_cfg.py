@@ -264,6 +264,12 @@ class EventCfg:
         },
     )
 
+    # =======code edit=======
+    # Report the mean/std of every reward term for the evaluation runs (play_one_episode.py / play.py);
+    # the term lives in ant/mdp/reward.py and stays silent during training. mode="reset" matters: reset
+    # events run before RewardManager.reset() clears the per-term episodic sums this report reads.
+    reward_stats = EventTerm(func=mymdp.log_episode_reward_stats, mode="reset")
+
 
 @configclass
 class RewardsCfg:
