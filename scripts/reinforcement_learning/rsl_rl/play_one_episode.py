@@ -55,6 +55,7 @@ simulation_app = app_launcher.app
 
 import gymnasium as gym
 import os
+import subprocess
 import time
 import torch
 
@@ -78,6 +79,104 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 # PLACEHOLDER: Extension template (do not remove this comment)
+
+
+# =======code edit=======
+# Episode reward report of the Ant tasks. The same episodes are scored with two reward definitions --
+# the legacy (cailab) one and this branch's own -- and each gets its own labelled section, per-term
+# table and result lines. The helpers below are used by main().
+
+
+def _code_version() -> str:
+    """Repository, branch and commit of the code that is running, e.g. ``owner/repo @ branch (abcdef)``."""
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+
+        def git(*args: str) -> str:
+            return subprocess.check_output(("git", *args), cwd=root, text=True, stderr=subprocess.DEVNULL).strip()
+
+        url = git("config", "--get", "remote.origin.url")
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        commit = git("rev-parse", "--short", "HEAD")
+        # https://github.com/owner/repo.git and git@github.com:owner/repo.git both give owner/repo
+        slug = url.removesuffix(".git").rstrip("/").split("://")[-1].replace(":", "/")
+        return f"{'/'.join(slug.split('/')[-2:])} @ {branch} ({commit})"
+    except Exception:
+        # a copy of the repository without git metadata must not break the evaluation
+        return "current working tree"
+
+
+def _record_finished_episodes(env, manager, sums: torch.Tensor, lengths: torch.Tensor, recorded: torch.Tensor):
+    """Wrap ``manager.reset`` so that the finished episodes are kept before their sums are cleared.
+
+    Only the first episode of an environment is kept, in ``sums`` (per term, the manager's own episodic
+    sums, i.e. term value x weight x dt) and ``lengths`` (episode length in steps).
+    """
+    reset = manager.reset
+
+    def reset_with_recording(env_ids=None):
+        ids = (
+            torch.arange(sums.shape[0], device=sums.device)
+            if env_ids is None
+            else torch.as_tensor(env_ids, dtype=torch.long, device=sums.device)
+        )
+        # episode_length_buf still holds the finished episode here and is zeroed only later in _reset_idx,
+        # so a length of zero means this is not a finished episode (e.g. the reset done at construction).
+        first = ids[(~recorded[ids]) & (env.episode_length_buf[ids] > 0)]
+        if len(first) > 0:
+            for column, name in enumerate(manager.active_terms):
+                sums[first, column] = manager._episode_sums[name][first].to(dtype=torch.float64)
+            lengths[first] = env.episode_length_buf[first].to(dtype=torch.float64)
+            recorded[first] = True
+        return reset(env_ids)
+
+    manager.reset = reset_with_recording
+
+
+def _episode_values(manager, sums: torch.Tensor, recorded: torch.Tensor) -> torch.Tensor:
+    """Per environment and term: the kept first episode, or what the running episode has accumulated."""
+    values = sums.clone()
+    running = ~recorded
+    if bool(running.any()):
+        for column, name in enumerate(manager.active_terms):
+            values[running, column] = manager._episode_sums[name][running].to(dtype=torch.float64)
+    return values
+
+
+def _print_reward_table(env, manager, sums: torch.Tensor, lengths: torch.Tensor, recorded: torch.Tensor) -> None:
+    """Print one reward definition as a table: term, weight, episode return mean/std, per-step mean."""
+    term_names = manager.active_terms
+    values = _episode_values(manager, sums, recorded)
+    steps = lengths.clone()
+    running = ~recorded
+    if bool(running.any()):
+        steps[running] = env.episode_length_buf[running].to(dtype=torch.float64)
+    steps = steps.clamp(min=1.0)
+
+    weights = torch.tensor(
+        [manager.get_term_cfg(name).weight for name in term_names], dtype=torch.float64, device=values.device
+    )
+    mean = values.mean(dim=0)
+    std = values.std(dim=0, unbiased=False)
+    # Divide the weight and the time step back out to get the reward function's own per-step output. The
+    # denominator is negative for every penalty term, so it must keep its sign: clamping it to a small
+    # positive number would print a garbage ~1e13 value instead. A zero weight becomes NaN.
+    denominator = weights.unsqueeze(0) * env.step_dt * steps.unsqueeze(-1)
+    denominator = torch.where(denominator.abs() < 1.0e-12, torch.full_like(denominator, float("nan")), denominator)
+    step_mean = values / denominator
+    total = values.sum(dim=1)
+
+    print(f"[REWARD-STATS] First episode of {env.num_envs} environments (mean/std across environments):")
+    print(f"[REWARD-STATS] {'reward term':<28}{'weight':>10}{'ep_return_mean':>16}{'ep_return_std':>15}{'step_mean':>13}")
+    for column, name in enumerate(term_names):
+        print(
+            f"[REWARD-STATS] {name:<28}{weights[column].item():>10.4g}{mean[column].item():>16.6f}"
+            f"{std[column].item():>15.6f} {step_mean[:, column].mean().item():>12.6f}"
+        )
+    print(
+        f"[REWARD-STATS] {'TOTAL':<28}{'':>10}{total.mean().item():>16.6f}"
+        f"{total.std(unbiased=False).item():>15.6f}"
+    )
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -188,31 +287,55 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     episode_steps = torch.zeros(env.num_envs, dtype=torch.long, device=env.device)
     finished = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     # =======code edit=======
-    # The episode reward total below is computed with the reward functions and weights of the reference
-    # (cailab) version, commit e83a5d2f11ca1b5f03b690e1978479e620c500e2, instead of the task rewards this
-    # branch keeps retuning (see ant/mdp/reference_reward.py). The extra RewardManager evaluates that
-    # definition on every step; the environment and the policy still use the task's own reward.
+    # The Ant episode reward is reported twice, once with the reward functions and weights of the legacy
+    # (cailab) version, commit e83a5d2f11ca1b5f03b690e1978479e620c500e2 (see ant/mdp/reference_reward.py),
+    # and once with this branch's own retuned reward terms. An extra RewardManager evaluates the legacy
+    # definition every step; the environment and the policy keep using the task's own reward.
     reference_manager = None
-    reference_episode_rewards = torch.zeros(env.num_envs, dtype=torch.float64, device=env.device)
-    reference_step_rewards = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+    legacy_term_sums = torch.zeros((env.num_envs, 0), dtype=torch.float64, device=env.device)
+    legacy_lengths = torch.zeros(env.num_envs, dtype=torch.float64, device=env.device)
+    legacy_recorded = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    task_term_sums = torch.zeros((env.num_envs, 0), dtype=torch.float64, device=env.device)
+    task_lengths = torch.zeros(env.num_envs, dtype=torch.float64, device=env.device)
+    task_recorded = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
     if "isaac-ant" in (args_cli.task or "").lower():
         from isaaclab_tasks.manager_based.classic.ant.mdp.reference_reward import (
+            REFERENCE_COMMIT,
+            REFERENCE_REF,
+            REFERENCE_REPOSITORY,
             reference_reward_manager as build_reference_reward_manager,
         )
 
+        task_manager = env.unwrapped.reward_manager
         reference_manager = build_reference_reward_manager(env.unwrapped)
-        # The environment computes the task reward before it resets the environments that finished, so
-        # the reference reward has to be evaluated in that same instant: once env.step() returns, such
-        # an environment already stands at its reset pose and progress_reward would read the potential
-        # jump across the reset. Hooking the task reward's compute() is exactly that instant.
-        task_reward_compute = env.unwrapped.reward_manager.compute
+        legacy_term_sums = torch.zeros(
+            (env.num_envs, len(reference_manager.active_terms)), dtype=torch.float64, device=env.device
+        )
+        task_term_sums = torch.zeros(
+            (env.num_envs, len(task_manager.active_terms)), dtype=torch.float64, device=env.device
+        )
+        _record_finished_episodes(env.unwrapped, task_manager, task_term_sums, task_lengths, task_recorded)
+        _record_finished_episodes(env.unwrapped, reference_manager, legacy_term_sums, legacy_lengths, legacy_recorded)
+        # Both definitions have to see the same episodes. The environment computes the task reward and
+        # then resets the environments that finished, so the legacy reward is evaluated inside that same
+        # window: hooking compute() scores the terminal step before the reset pose, and hooking reset()
+        # (below) closes the legacy episode at the moment episode_length_buf still holds its length.
+        task_reward_compute = task_manager.compute
+        task_reward_reset = task_manager.reset
 
         def _compute_task_and_reference_reward(dt):
             task_reward = task_reward_compute(dt)
-            reference_step_rewards[:] = reference_manager.compute(dt)
+            reference_manager.compute(dt)
             return task_reward
 
-        env.unwrapped.reward_manager.compute = _compute_task_and_reference_reward
+        def _reset_task_and_reference_reward(env_ids=None):
+            # the wrapped reset records both managers' finished episodes before they clear their sums
+            task_reward = task_reward_reset(env_ids)
+            reference_manager.reset(env_ids)
+            return task_reward
+
+        task_manager.compute = _compute_task_and_reference_reward
+        task_manager.reset = _reset_task_and_reference_reward
     # simulate environment
     while simulation_app.is_running():
         start_time = time.time()
@@ -225,23 +348,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             # Include the terminal step, then ignore auto-reset episodes for finished environments.
             active = ~finished
             episode_rewards[active] += rewards[active]
-            # =======code edit=======
-            if reference_manager is not None:
-                reference_episode_rewards[active] += reference_step_rewards[active].to(dtype=torch.float64)
             episode_steps[active] += 1
             finished |= dones.bool()
-            # =======code edit=======
-            # Close the reference episodes of the environments the environment just reset, so that its
-            # episodic sums and its stateful terms (progress_reward's potentials) follow the episodes.
-            if reference_manager is not None:
-                reset_ids = dones.nonzero(as_tuple=False).squeeze(-1)
-                if len(reset_ids) > 0:
-                    reference_manager.reset(reset_ids)
         timestep += 1
 
         # Wait for the first episode of every environment to finish.
         if finished.all().item():
-            print(f"[INFO] All {env.num_envs} environments finished their first episode.")
             break
 
         # Recording length must not truncate episode statistics.
@@ -254,29 +366,58 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
 
-    completed = int(finished.sum().item())
-    print(f"[INFO] Completed first episodes: {completed}/{env.num_envs}")
-    if completed != env.num_envs:
-        print("[INFO] Statistics include partial episodes for unfinished environments.")
+    def _print_results(reward_total: torch.Tensor) -> None:
+        """Result lines of one reward definition; the episode lengths do not depend on the definition."""
+        completed = int(finished.sum().item())
+        if completed == env.num_envs:
+            print(f"[INFO] All {env.num_envs} environments finished their first episode.")
+        print(f"[INFO] Completed first episodes: {completed}/{env.num_envs}")
+        if completed != env.num_envs:
+            print("[INFO] Statistics include partial episodes for unfinished environments.")
+        if env.num_envs == 1:
+            print(f"[RESULT] Episode reward total: {reward_total[0].item():.6f}")
+            print(f"[RESULT] Episode steps: {episode_steps[0].item()}")
+        else:
+            # Population standard deviation across the evaluated environments.
+            steps = episode_steps.to(dtype=torch.float64)
+            print(
+                f"[RESULT] Episode reward total: mean={reward_total.mean().item():.6f}, "
+                f"std={reward_total.std(unbiased=False).item():.6f}"
+            )
+            print(
+                f"[RESULT] Episode steps: mean={steps.mean().item():.6f}, "
+                f"std={steps.std(unbiased=False).item():.6f}"
+            )
 
-    # =======code edit=======
-    # The reward total is the reference (cailab) definition: the extra manager's returns replace the
-    # rewards the environment accumulated, which are the task's own, retuned ones.
-    reward_total = episode_rewards if reference_manager is None else reference_episode_rewards
-    if env.num_envs == 1:
-        print(f"[RESULT] Episode reward total: {reward_total[0].item():.6f}")
-        print(f"[RESULT] Episode steps: {episode_steps[0].item()}")
+    if reference_manager is None:
+        # other tasks keep the single reward definition of their own environment configuration
+        _print_results(episode_rewards)
     else:
-        # Population standard deviation across the evaluated environments.
-        steps = episode_steps.to(dtype=torch.float64)
-        print(
-            f"[RESULT] Episode reward total: mean={reward_total.mean().item():.6f}, "
-            f"std={reward_total.std(unbiased=False).item():.6f}"
-        )
-        print(
-            f"[RESULT] Episode steps: mean={steps.mean().item():.6f}, "
-            f"std={steps.std(unbiased=False).item():.6f}"
-        )
+        definitions = [
+            (
+                "LEGACY",
+                f"{REFERENCE_REPOSITORY} @ {REFERENCE_REF} ({REFERENCE_COMMIT[:12]})",
+                reference_manager,
+                legacy_term_sums,
+                legacy_lengths,
+                legacy_recorded,
+            ),
+            (
+                "OUR CODE",
+                _code_version(),
+                env.unwrapped.reward_manager,
+                task_term_sums,
+                task_lengths,
+                task_recorded,
+            ),
+        ]
+        # per-term tables first, then the result lines, both under the same section headers
+        for kind, version, manager, sums, lengths, recorded in definitions:
+            print(f"=== {kind} ({version}) ===")
+            _print_reward_table(env.unwrapped, manager, sums, lengths, recorded)
+        for kind, version, manager, sums, lengths, recorded in definitions:
+            print(f"=== {kind} ({version}) ===")
+            _print_results(_episode_values(manager, sums, recorded).sum(dim=1))
 
     # close the simulator
     env.close()

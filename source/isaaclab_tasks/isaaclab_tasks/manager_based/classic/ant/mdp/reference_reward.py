@@ -26,8 +26,9 @@ commit), so importing them reproduces the reference values exactly as the refere
 i.e. each step contributes ``term * weight * step_dt`` and an episode is their sum.
 
 ``play_one_episode.py`` builds an extra :class:`~isaaclab.managers.RewardManager` from
-:func:`reference_reward_manager` and reports that manager's episodic returns as its
-``[RESULT] Episode reward total``; the environment and the policy keep using the task's own reward.
+:func:`reference_reward_manager` and reports its episodic returns in a ``=== LEGACY (...) ===``
+section, next to a ``=== OUR CODE (...) ===`` section holding this branch's own reward terms. The
+environment and the policy keep using the task's own reward.
 
 Caveat: two reference terms are defined on the reference action space (joint torques, scale 7.5).
 ``action_l2`` penalizes the raw action and ``power_consumption`` multiplies it by the joint velocity.
@@ -42,7 +43,9 @@ from isaaclab.managers import RewardManager, RewardTermCfg
 import isaaclab.envs.mdp as core_mdp
 import isaaclab_tasks.manager_based.classic.humanoid.mdp as humanoid_mdp
 
-#: Commit whose Ant ``RewardsCfg`` this module copies (the tip of the cailab fork's ``main``).
+#: Repository, ref and commit whose Ant ``RewardsCfg`` this module copies.
+REFERENCE_REPOSITORY = "cailab-hy/IsaacLab_RS"
+REFERENCE_REF = "upstream/main"
 REFERENCE_COMMIT = "e83a5d2f11ca1b5f03b690e1978479e620c500e2"
 
 
