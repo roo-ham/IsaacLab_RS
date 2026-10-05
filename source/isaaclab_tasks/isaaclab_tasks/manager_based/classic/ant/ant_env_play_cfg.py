@@ -6,23 +6,23 @@
 # =======code edit=======
 """Evaluation (play) configuration of this branch's Ant task.
 
-``Isaac-Ant-Play-v0`` runs exactly the same environment as ``Isaac-Ant-v0`` -- plane terrain, joint
-effort actions, the same observations and the same baseline reward definition -- with the evaluation
-settings the group_ten branch uses for its play task: a small scene and no curriculum or randomization
-that would change between episodes.
+``Isaac-Ant-Play-v0`` runs the same environment as ``Isaac-Ant-v0`` -- same actions, observations and
+baseline reward definition, and no sensors -- on the sub-terrain that training never sees, at a fixed
+difficulty and with the terrain-level curriculum switched off, as the group_ten branch does for its play
+task.
 
-The baseline classes in ``ant_env_cfg.py`` are intentionally left untouched; this module only adds the
+The training classes in ``ant_env_cfg.py`` are intentionally left untouched; this module only adds the
 Play variant that the ``Isaac-Ant-Play-v0`` registration in ``__init__.py`` points at.
 """
 
 from isaaclab.utils import configclass
 
-from .ant_env_cfg import AntEnvCfg
+from .ant_env_cfg import EVAL_TERRAINS_CFG, AntEnvCfg
 
 
 @configclass
 class AntEnvCfg_PLAY(AntEnvCfg):
-    """Baseline Ant task configured for evaluation."""
+    """Ant task configured for evaluation on the held-out terrain."""
 
     def __post_init__(self):
         # post init of parent
@@ -30,6 +30,16 @@ class AntEnvCfg_PLAY(AntEnvCfg):
 
         # smaller scene for play
         self.scene.num_envs = 32
-        # The baseline task has no domain randomization to switch off: reset_base uses empty ranges and
+        # =======code edit=======
+        # Evaluate only on the held-out sub-terrain, at a fixed difficulty, and without the terrain-level
+        # curriculum moving robots between rows.
+        gen = EVAL_TERRAINS_CFG.copy()
+        gen.num_rows, gen.num_cols = 30, 30
+        gen.curriculum = False
+        gen.difficulty_range = (0.8, 0.8)
+        self.scene.terrain.terrain_generator = gen
+        self.curriculum.terrain_levels = None
+        # =======code edit=======
+        # There is no domain randomization here to switch off: reset_base uses empty ranges and
         # reset_robot_joints only adds initial-state noise. Uncomment to evaluate from the default pose:
         # self.events.reset_robot_joints = None

@@ -6,6 +6,7 @@
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -18,10 +19,32 @@ from isaaclab.utils import configclass
 
 import isaaclab_tasks.manager_based.classic.humanoid.mdp as mdp
 
+import math
+
+# =======code edit=======
+# The terrain curriculum term lives in ant/mdp (non-reward; the branch trains without sensors).
+import isaaclab_tasks.manager_based.classic.ant.mdp as mymdp
+from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
+from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG  # isort: skip
+
 ##
 # Pre-defined configs
 ##
 from isaaclab_assets.robots.ant import ANT_CFG  # isort: skip
+
+# =======code edit=======
+# Rough terrain for the Ant task. The held-out sub-terrain is used only by the play configuration, so a
+# policy that overfits one sub-terrain shows up in the evaluation numbers. curriculum=True lays the
+# difficulty out by row (row i ~ difficulty i/num_rows) so the terrain_levels curriculum below can move
+# each robot between rows; with False every tile would get a random difficulty in [0, 1].
+HELD_OUT_TERRAIN = "boxes"  # pyramid_stairs, pyramid_stairs_inv, boxes, random_rough, hf_pyramid_slope, hf_pyramid_slope_inv
+TRAIN_TERRAINS_CFG = ROUGH_TERRAINS_CFG.replace(
+    sub_terrains={name: cfg for name, cfg in ROUGH_TERRAINS_CFG.sub_terrains.items() if name != HELD_OUT_TERRAIN},
+    curriculum=True,
+)
+EVAL_TERRAINS_CFG = ROUGH_TERRAINS_CFG.replace(
+    sub_terrains={HELD_OUT_TERRAIN: ROUGH_TERRAINS_CFG.sub_terrains[HELD_OUT_TERRAIN]}
+)
 
 
 @configclass
@@ -29,16 +52,25 @@ class MySceneCfg(InteractiveSceneCfg):
     """Configuration for the terrain scene with an ant robot."""
 
     # terrain
+    # =======code edit=======
+    # Generated rough terrain. No sensors are attached to the scene: the task is trained without any,
+    # so the policy sees the terrain only through proprioception and the reward.
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
-        terrain_type="plane",
+        terrain_type="generator",
+        terrain_generator=TRAIN_TERRAINS_CFG,
+        max_init_terrain_level=5,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
-            friction_combine_mode="average",
-            restitution_combine_mode="average",
+            friction_combine_mode="multiply",
+            restitution_combine_mode="multiply",
             static_friction=1.0,
             dynamic_friction=1.0,
-            restitution=0.0,
+        ),
+        visual_material=sim_utils.MdlFileCfg(
+            mdl_path=f"{ISAACLAB_NUCLEUS_DIR}/Materials/TilesMarbleSpiderWhiteBrickBondHoned/TilesMarbleSpiderWhiteBrickBondHoned.mdl",
+            project_uvw=True,
+            texture_scale=(0.25, 0.25),
         ),
         debug_vis=False,
     )
@@ -152,7 +184,23 @@ class TerminationsCfg:
     # (1) Terminate if the episode length is exceeded
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     # (2) Terminate if the robot falls
-    torso_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.31})
+    # torso_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.31})
+    # =======code edit=======
+    # World z does not describe a fall on generated terrain: some sub-terrains (e.g. inverted pyramids)
+    # sit below z = 0 and the robot stands higher on a step, so the fixed 0.31 m threshold would reset
+    # robots every step. Use the terrain-independent orientation check instead.
+    bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": math.radians(50.0)})
+
+
+# =======code edit=======
+@configclass
+class CurriculumCfg:
+    """Curriculum terms for the MDP."""
+
+    # Moves each robot between terrain rows from the episode that just ended: one row up when it reached
+    # the time-out without falling at >= 1.5 m/s average forward speed, one row down when it fell or
+    # averaged < 0.3 m/s. Logged as Curriculum/terrain_levels (mean level).
+    terrain_levels = CurrTerm(func=mymdp.terrain_levels_speed, params={"up_speed": 1.5, "down_speed": 0.3})
 
 
 @configclass
@@ -168,6 +216,8 @@ class AntEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
+    # =======code edit=======
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         """Post initialization."""
@@ -178,6 +228,10 @@ class AntEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1 / 120.0
         self.sim.render_interval = self.decimation
         self.sim.physx.bounce_threshold_velocity = 0.2
+        # =======code edit=======
+        # The generated terrain brings its own material (multiply combine modes); keep the simulation
+        # default aligned with it.
+        self.sim.physics_material = self.scene.terrain.physics_material
         # default friction material
         self.sim.physics_material.static_friction = 1.0
         self.sim.physics_material.dynamic_friction = 1.0
