@@ -389,16 +389,23 @@ def log_episode_reward_stats(env, env_ids) -> None:
     )
     mean = returns.mean(dim=0)
     std = returns.std(dim=0, unbiased=False)
-    step_mean = returns / (weights.unsqueeze(0) * env.step_dt * steps.unsqueeze(-1)).clamp(min=1.0e-12)
-    step_mean[:, weights == 0.0] = float("nan")
+    # Divide the weight and the time step back out to get the reward function's own per-step output.
+    # The denominator is negative for every penalty term, so it must keep its sign: clamping it to a
+    # small positive number (as a plain clamp(min=...) would) prints a garbage ~1e13 value instead.
+    # A degenerate denominator (a term whose weight is zero) becomes NaN.
+    denominator = weights.unsqueeze(0) * env.step_dt * steps.unsqueeze(-1)
+    denominator = torch.where(
+        denominator.abs() < 1.0e-12, torch.full_like(denominator, float("nan")), denominator
+    )
+    step_mean = returns / denominator
     total = returns.sum(dim=1)
 
     print(f"[REWARD-STATS] First episode of {env.num_envs} environments (mean/std across environments):")
-    print(f"[REWARD-STATS] {'reward term':<28}{'weight':>10}{'ep_return_mean':>16}{'ep_return_std':>15}{'step_mean':>12}")
+    print(f"[REWARD-STATS] {'reward term':<28}{'weight':>10}{'ep_return_mean':>16}{'ep_return_std':>15}{'step_mean':>13}")
     for column, name in enumerate(term_names):
         print(
             f"[REWARD-STATS] {name:<28}{weights[column].item():>10.4g}{mean[column].item():>16.6f}"
-            f"{std[column].item():>15.6f}{step_mean[:, column].mean().item():>12.6f}"
+            f"{std[column].item():>15.6f} {step_mean[:, column].mean().item():>12.6f}"
         )
     print(
         f"[REWARD-STATS] {'TOTAL':<28}{'':>10}{total.mean().item():>16.6f}"
