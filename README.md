@@ -41,95 +41,18 @@
   - PPO Hyper Parameter
     - legacy·legacy_sensor는 `desired_kl=0.01`
     - group_ten·group_ten_testreward는 `desired_kl=0.015`
-### Branch별 config
-
-#### 0. `main` — ant_reward + README 보관
-
-custom reward 함수와 발끝 kinematics 모듈이 처음 도입된 branch입니다. rough terrain, 마찰 랜덤화, 지면 센서, custom `RewardsCfg`가 모두 들어 있습니다.
-
-| config | 파일 | 내용 |
-| ------ | ---- | ---- |
-| 학습 환경 | [ant_env_cfg.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `AntEnvCfg` | `num_envs=4096`, rough terrain(`boxes` 제외), 마찰 랜덤화, action=joint position |
-| 평가 환경 | [ant_env_cfg.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `AntEnvCfg_PLAY` | `boxes` 지형 30×30, difficulty 0.8 고정, terrain curriculum off, foothold scan 시각화 |
-| 센서 | [ant_env_cfg.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `MySceneCfg` | `height_scanner`(13×13), `foothold_scanner`(17×17), `contact_forces`(발 4개) |
-| custom reward | [mdp/reward.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py) | `base_height_l2`, `feet_air_time`, `mechanical_power`, `feet_all_airborne`, `yaw_deviation_l2`, `swing_obstacle_clearance`, `stumble_without_lift` 등 |
-| 발끝 kinematics | [mdp/ant_foot_kinematics.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/ant_foot_kinematics.py) | `FOOT_NAMES`, `AntFootKinematics`, `foot_tip_height` |
-| PPO | [agents/rsl_rl_ppo_cfg.py](source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py) | `desired_kl=0.01`, `max_iterations=1000` |
-
-#### 1. `legacy` — 도메인 random only
-
-센서와 custom reward 없이, rough terrain + 마찰 랜덤화만 적용한 기준선입니다. reward는 baseline 7종을 그대로 사용합니다.
-
-| config | 파일 | 내용 |
-| ------ | ---- | ---- |
-| 학습 환경 | [ant_env_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `AntEnvCfg` | rough terrain, 센서 없음, baseline reward 7종, `clone_in_fabric=True` |
-| 평가 환경 | [ant_env_play_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_play_cfg.py) `AntEnvCfg_PLAY` | `boxes` 지형 30×30, difficulty 0.8 고정, curriculum off |
-| domain randomization | [mdp/env_terms.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/env_terms.py) | `randomize_discrete_friction`(마찰계수 0.6~1.2), `terrain_levels_speed`(지형 커리큘럼) |
-| 관측 | `ant_env_cfg.py` `ObservationsCfg` | proprioception + `feet_body_forces` (지면 센서 없음) |
-| PPO | [agents/rsl_rl_ppo_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py) | `desired_kl=0.01` |
-
-#### 2. `legacy_sensor` — 도메인 random + 지면 센서
-
-`legacy`에 지면 센서와 그에 따른 관측만 추가한 branch입니다. reward는 여전히 baseline 7종입니다.
-
-| config | 파일 | 내용 |
-| ------ | ---- | ---- |
-| 학습 환경 | [ant_env_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy_sensor/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `AntEnvCfg` | rough terrain + 마찰 랜덤화 + 지면 센서, `clone_in_fabric=False` |
-| 센서 | `ant_env_cfg.py` `MySceneCfg` | `height_scanner`(13×13=169), `foothold_scanner`(17×17=289), `contact_forces`(발 4개) |
-| 관측 | `ant_env_cfg.py` `ObservationsCfg` | `base_height`를 지면 기준 torso 높이로 교체, `terrain_height_scan`(289) 추가 |
-| mdp | [mdp/env_terms.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy_sensor/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/env_terms.py) | `torso_height_above_ground`, `torso_height_obs` 추가 |
-| 평가 환경 | [ant_env_play_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy_sensor/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_play_cfg.py) `AntEnvCfg_PLAY` | `boxes` 지형 30×30, foothold scan 시각화 |
-| PPO | [agents/rsl_rl_ppo_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/legacy_sensor/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py) | `desired_kl=0.01` |
-
-#### 3. `group_ten` — 도메인 random + 센서 + custom reward
-
-최신 학습이 수행된 branch입니다. 센서와 custom reward를 함께 쓰며, reward weight는 아래 III의 값입니다.
-
-| config | 파일 | 내용 |
-| ------ | ---- | ---- |
-| 학습 환경 | [ant_env_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py) `AntEnvCfg` | rough terrain + 마찰 랜덤화 + 센서 + custom reward |
-| 평가 환경 | 위 파일 `AntEnvCfg_PLAY` | `boxes` 지형, difficulty 0.8 고정, foothold scan 시각화 |
-| custom reward | [mdp/reward.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py) | custom reward 함수 모음 (III 참고) |
-| 발끝 kinematics | [mdp/ant_foot_kinematics.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/ant_foot_kinematics.py) | `foot_tip_height`, `foot_tip_height_local`, `foot_tip_state` |
-| PPO | [agents/rsl_rl_ppo_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py) | `desired_kl=0.015` |
-
-#### 4. `group_ten_testreward` — group_ten + legacy reference reward
-
-`group_ten`과 환경/보상 설정이 완전히 동일하고, 평가 시 legacy(cailab) reward 정의로 episode return을 함께 계산해 출력하는 기능만 추가되었습니다.
-
-| config | 파일 | 내용 |
-| ------ | ---- | ---- |
-| 학습 환경 / reward | [ant_env_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten_testreward/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/ant_env_cfg.py), [mdp/reward.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten_testreward/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reward.py) | `group_ten`과 동일 (weight 포함) |
-| reference reward | [mdp/reference_reward.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten_testreward/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/mdp/reference_reward.py) | cailab `upstream/main`(`e83a5d2`)의 Ant reward 정의를 동결해 별도 회계 (평가 전용) |
-| play script | [play_one_episode.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten_testreward/scripts/reinforcement_learning/rsl_rl/play_one_episode.py) | `=== LEGACY ... ===` / `=== OUR CODE ... ===` 섹션과 term별 통계 출력 |
-| PPO | [agents/rsl_rl_ppo_cfg.py](https://github.com/roo-ham/IsaacLab_RS/blob/group_ten_testreward/source/isaaclab_tasks/isaaclab_tasks/manager_based/classic/ant/agents/rsl_rl_ppo_cfg.py) | `desired_kl=0.015` |
 
 ---
 
 ## II. 실행 방법
 
-### 공통 사항
-
-- 학습(train)은 `Isaac-Ant-v0`, 평가/재생(play·test)은 `Isaac-Ant-Play-v0`에서 진행합니다.
-  - train: `scripts/reinforcement_learning/rsl_rl/train.py`
-  - play/test: `scripts/reinforcement_learning/rsl_rl/play_one_episode.py`
-- 학습 log는 `logs/rsl_rl/ant/<run_name>` 아래에 쌓이며, 최종 checkpoint는 `model_999.pt`, 재생 영상은
-  `logs/rsl_rl/ant/<run_name>/videos/play/rl-video-step-0.mp4` 입니다.
-- 실행 전에 반드시 해당 branch로 이동합니다: `git checkout <branch>`
-
-> ⚠️ **train 명령어는 최신 학습 branch인 `group_ten`에서 실행합니다.** (아래 3번 type의 학습이 여기에 해당)
-
-### 1. 도메인 random only
-
 | index | 제목 | branch | 학습 log 경로 | domain randomization | 바닥센서 여부 | Custom Reward 설계 여부 |
 | ----- | ---- | ------ | ------------- | -------------------- | ------------- | ----------------------- |
 | 1 | 도메인 random only | `legacy` | `logs/rsl_rl/ant/Terrain_And_Sensorless` | O (마찰계수 friction 0.6~1.2, 0.1 간격 7단계) | X | X |
+| 2 | 도메인 random + 센서 | `legacy_sensor` | `logs/rsl_rl/ant/Terrain_With_Sensor` | O (마찰계수 friction 0.6~1.2, 0.1 간격 7단계) | O (foothold 17×17 = 289개 + height 13×13 = 169개) | X |
+| 3 | 도메인 random + 센서 + custom reward | `group_ten_testreward` (train: **`group_ten`**) | `logs/rsl_rl/ant/2026-10-04_21-27-44_Test10` | O (마찰계수 friction 0.6~1.2, 0.1 간격 7단계) | O (foothold 17×17 = 289개 + height 13×13 = 169개) | O |
 
-#### 개요
-
-`legacy` branch에서 실행 가능합니다. rough terrain 위에서 마찰계수만 도메인 랜덤화하고, 지면 센서와 custom reward는 쓰지 않습니다.
-reward는 baseline 7종(`progress`, `alive`, `upright`, `move_to_target`, `action_l2`, `energy`, `joint_pos_limits`) 그대로이며,
-정책은 proprioception과 발 wrench만으로 지형을 넘습니다. 참고로 같은 branch에 평지 학습 run(`Flat_And_Sensorless`)도 있습니다.
+### 1. 도메인 random only
 
 ```bash
 # 0) branch 준비
@@ -147,26 +70,7 @@ git checkout legacy
   --video --video_length 960
 ```
 
-#### ant_report 파일
-
-| 파일 | 목적 |
-| ---- | ---- |
-| [rl-video-step-0.mp4](<ant_report/1. 도메인랜덤 only/rl-video-step-0.mp4>) | `Terrain_And_Sensorless` 정책의 play 재생 영상 |
-| [Screenshot from 2026-10-05 18-36-40.png](<ant_report/1. 도메인랜덤 only/Screenshot from 2026-10-05 18-36-40.png>) | TensorBoard 학습 곡선 (`mean_episode_length`, `mean_reward`, 999 iter) |
-| [Screenshot from 2026-10-05 19-09-14.png](<ant_report/1. 도메인랜덤 only/Screenshot from 2026-10-05 19-09-14.png>) | `play_one_episode.py` 실행 결과 (episode reward total mean 18.101228, steps 852.24) |
-
 ### 2. 도메인 random + 센서
-
-| index | 제목 | branch | 학습 log 경로 | domain randomization | 바닥센서 여부 | Custom Reward 설계 여부 |
-| ----- | ---- | ------ | ------------- | -------------------- | ------------- | ----------------------- |
-| 2 | 도메인 random + 센서 | `legacy_sensor` | `logs/rsl_rl/ant/Terrain_With_Sensor` | O (마찰계수 friction 0.6~1.2, 0.1 간격 7단계) | O (foothold 17×17 = 289개 + height 13×13 = 169개) | X |
-
-#### 개요
-
-`legacy_sensor` branch에서 실행 가능합니다. 1번 type에 지면 센서를 추가한 단계로,
-torso 아래 지면 높이를 보는 `height_scanner`(169개)와 발이 디딜 넓은 영역을 보는 `foothold_scanner`(289개),
-그리고 발 접촉/체공 시간을 재는 `contact_forces`(발 4개)를 사용합니다.
-정책 관측에는 `terrain_height_scan`(289개)이 들어가고 `base_height`는 world z 대신 지면 기준 torso 높이로 바뀝니다. reward는 여전히 baseline 7종입니다.
 
 ```bash
 # 0) branch 준비
@@ -184,21 +88,7 @@ git checkout legacy_sensor
   --video --video_length 960
 ```
 
-#### ant_report 파일
-
-| 파일 | 목적 |
-| ---- | ---- |
-| [rl-video-step-0.mp4](<ant_report/2. 도메인랜덤 + 센서/rl-video-step-0.mp4>) | `Terrain_With_Sensor` 정책의 play 재생 영상 |
-| [Screenshot from 2026-10-05 19-50-25.png](<ant_report/2. 도메인랜덤 + 센서/Screenshot from 2026-10-05 19-50-25.png>) | TensorBoard 비교 곡선 (센서 없음 `Terrain_And_Sensorless` vs 센서 있음 `Terrain_With_Sensor`) |
-| [Screenshot from 2026-10-05 19-50-08.png](<ant_report/2. 도메인랜덤 + 센서/Screenshot from 2026-10-05 19-50-08.png>) | `play_one_episode.py` 실행 결과 (episode reward total mean 20.108204, steps 833.36) |
-
 ### 3. 도메인 random + 센서 + custom reward
-
-| index | 제목 | branch | 학습 log 경로 | domain randomization | 바닥센서 여부 | Custom Reward 설계 여부 |
-| ----- | ---- | ------ | ------------- | -------------------- | ------------- | ----------------------- |
-| 3 | 도메인 random + 센서 + custom reward | `group_ten_testreward` (train: **`group_ten`**) | `logs/rsl_rl/ant/2026-10-04_21-27-44_Test10` | O (마찰계수 friction 0.6~1.2, 0.1 간격 7단계) | O (foothold 17×17 = 289개 + height 13×13 = 169개) | O |
-
-#### 개요
 
 `group_ten_testreward` branch에서 실행 가능합니다. 2번 type에 custom reward를 설계/튜닝한 단계이며,
 환경과 reward 정의는 `group_ten`과 완전히 동일합니다. `group_ten_testreward`는 여기에 더해 평가 시
@@ -224,21 +114,40 @@ git checkout group_ten_testreward
   --video --video_length 960
 ```
 
-#### ant_report 파일
+---
+
+## III. ant_report 폴더
+
+### 1. 도메인 random only
+
+| 파일 | 목적 |
+| ---- | ---- |
+| [rl-video-step-0.mp4](<ant_report/1. 도메인랜덤 only/rl-video-step-0.mp4>) | `Terrain_And_Sensorless` 정책의 play 재생 영상 |
+| [Screenshot from 2026-10-05 18-36-40.png](<ant_report/1. 도메인랜덤 only/Screenshot from 2026-10-05 18-36-40.png>) | TensorBoard 학습 곡선 (`mean_episode_length`, `mean_reward`, 999 iter) |
+| [Screenshot from 2026-10-05 19-09-14.png](<ant_report/1. 도메인랜덤 only/Screenshot from 2026-10-05 19-09-14.png>) | `play_one_episode.py` 실행 결과 (episode reward total mean 18.101228, steps 852.24) |
+
+### 2. 도메인 random + 센서
+
+| 파일 | 목적 |
+| ---- | ---- |
+| [rl-video-step-0.mp4](<ant_report/2. 도메인랜덤 + 센서/rl-video-step-0.mp4>) | `Terrain_With_Sensor` 정책의 play 재생 영상 |
+| [Screenshot from 2026-10-05 19-50-25.png](<ant_report/2. 도메인랜덤 + 센서/Screenshot from 2026-10-05 19-50-25.png>) | TensorBoard 비교 곡선 (센서 없음 `Terrain_And_Sensorless` vs 센서 있음 `Terrain_With_Sensor`) |
+| [Screenshot from 2026-10-05 19-50-08.png](<ant_report/2. 도메인랜덤 + 센서/Screenshot from 2026-10-05 19-50-08.png>) | `play_one_episode.py` 실행 결과 (episode reward total mean 20.108204, steps 833.36) |
+
+### 3. 도메인 random + 센서 + custom reward
 
 | 파일 | 목적 |
 | ---- | ---- |
 | [rl-video-step-0.mp4](<ant_report/3. 도메인랜덤 + 센서 + custom reward/rl-video-step-0.mp4>) | `Test10` 정책의 play 재생 영상 |
 | [Screenshot from 2026-10-05 18-53-29.png](<ant_report/3. 도메인랜덤 + 센서 + custom reward/Screenshot from 2026-10-05 18-53-29.png>) | TensorBoard 학습 곡선 (`Test10`, 999 iter, `mean_reward` 224.9334) |
 | [Screenshot from 2026-10-05 19-02-41.png](<ant_report/3. 도메인랜덤 + 센서 + custom reward/Screenshot from 2026-10-05 19-02-41.png>) | `play_one_episode.py`의 `=== LEGACY ... ===` 섹션 결과 (reference reward total mean -1.761047) |
-| [별첨 - legacy reward 감점사유 (energy 소비 큼).png](<ant_report/3. 도메인랜덤 + 센서 + custom reward/별첨 - legacy reward 감점사유 (energy 소비 큼).png>) | legacy reward term별 통계 — `energy`의 `step_mean`이 50.11로 감점이 가장 큰 원인임을 보여주는 별첨 |
+| [별첨 - legacy reward 감점사유 (energy 소비 큼).png](<ant_report/3. 도메인랜덤 + 센서 + custom reward/별첨 - legacy reward 감점사유 (energy 소비 큼).png>) | legacy reward term별 통계 — `energy`의 `ep_return_mean`이 -24.83로 감점이 가장 큰 원인임을 보여주는 별첨 |
 
 ---
 
-## III. custom reward 함수 (기존과 달라진 부분만 작성)
+## IV. custom reward 함수
 
-기준: **`group_ten`(최신 학습, type 3)의 custom reward**를, **기존 legacy 정의(`upstream/main` = `e83a5d2`, type 1/2의 reward)** 와 비교해
-달라진 부분만 정리했습니다. `group_ten_testreward`의 reward도 아래와 동일합니다.
+기준: **`group_ten`(최신 학습, type 3)의 custom reward**를, **기존 legacy 정의** 와 비교해 달라진 부분만 정리했습니다.
 
 ### 1. weight만 달라진 항목
 
@@ -248,7 +157,7 @@ git checkout group_ten_testreward
 | `alive` | `mdp.is_alive` | 0.5 | 0.25 |
 | `move_to_target` | `humanoid.mdp.move_to_target_bonus` | 0.5 | 0.01 |
 
-### 2. 삭제된 항목 (있다가 삭제됨)
+### 2. 삭제된 항목
 
 | term | 삭제 전 상태 | 경과 |
 | ---- | ------------ | ---- |
