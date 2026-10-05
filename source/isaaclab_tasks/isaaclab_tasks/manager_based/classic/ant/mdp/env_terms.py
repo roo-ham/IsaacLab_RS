@@ -4,11 +4,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # =======code edit=======
-"""Non-reward MDP terms for the Ant rough-terrain task (terrain curriculum).
+"""Non-reward MDP terms for the Ant rough-terrain task (terrain curriculum, friction randomization).
 
-The body of :func:`terrain_levels_speed` is copied verbatim from the group_ten branch, where the rough
-terrain and its curriculum were set up. It is not a reward function and reads no sensor: it only moves
-each robot between terrain rows from the episode that just ended.
+The bodies of :func:`terrain_levels_speed` and :func:`randomize_discrete_friction` are copied verbatim
+from the group_ten branch, where the rough terrain and the domain randomization were set up. Neither is
+a reward function and neither reads a sensor: the curriculum moves each robot between terrain rows from
+the episode that just ended, and the friction event writes a material property on the robot.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import torch
 
 from isaaclab.managers import SceneEntityCfg
 
-__all__ = ["terrain_levels_speed"]
+__all__ = ["randomize_discrete_friction", "terrain_levels_speed"]
 
 
 # =======code edit=======
@@ -45,3 +46,24 @@ def terrain_levels_speed(
     move_down = (fell | (avg_speed < down_speed)) & ~move_up
     terrain.update_env_origins(env_ids, move_up, move_down)
     return torch.mean(terrain.terrain_levels.float())
+
+
+# =======code edit=======
+def randomize_discrete_friction(
+    env, env_ids, asset_cfg: SceneEntityCfg, friction_values: tuple[float, ...]
+) -> None:
+    """Assign one discrete, shared friction value to every Ant collider in each environment."""
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device="cpu")
+    else:
+        env_ids = env_ids.cpu()
+
+    asset = env.scene[asset_cfg.name]
+    values = torch.tensor(friction_values, dtype=torch.float32, device="cpu")
+    value_ids = torch.randint(len(values), (len(env_ids),), device="cpu")
+    friction = values[value_ids]
+    material_samples = torch.stack((friction, friction, torch.zeros_like(friction)), dim=-1)
+
+    materials = asset.root_physx_view.get_material_properties()
+    materials[env_ids] = material_samples.unsqueeze(1).expand(-1, materials.shape[1], -1)
+    asset.root_physx_view.set_material_properties(materials, env_ids)

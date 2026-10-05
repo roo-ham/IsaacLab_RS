@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import isaaclab.sim as sim_utils
+from isaaclab.actuators import IdealPDActuatorCfg
 from isaaclab.assets import AssetBaseCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
@@ -77,6 +78,20 @@ class MySceneCfg(InteractiveSceneCfg):
 
     # robot
     robot = ANT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # =======code edit=======
+    # Joint PD for position control (ANT_CFG has stiffness=damping=0, i.e. pure torque control). The Ant
+    # weighs 0.91 kg and one ankle holds ~1 Nm when standing, while effort control reached 5-15 Nm in
+    # kicks: stiffness 20 Nm/rad sags ~0.05 rad under that load and effort_limit 10 Nm (~10x standing
+    # torque) leaves room for climbing. Same actuators as the group_ten branch; only the contact-sensor
+    # switch (robot.spawn.activate_contact_sensors) is left out, since this branch has no sensors.
+    robot.actuators = {
+        "body": IdealPDActuatorCfg(
+            joint_names_expr=[".*"],
+            stiffness=20.0,
+            damping=1.0,
+            effort_limit=10.0,
+        ),
+    }
 
     # lights
     light = AssetBaseCfg(
@@ -94,7 +109,11 @@ class MySceneCfg(InteractiveSceneCfg):
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    joint_effort = mdp.JointEffortActionCfg(asset_name="robot", joint_names=[".*"], scale=7.5)
+    # =======code edit=======
+    # Joint position targets around the default pose (rad): target = default + 0.5 * action. With
+    # clip_actions=1.0 that is +-0.5 rad (~29 deg) per joint; the PD actuator turns it into torque.
+    # joint_effort = mdp.JointEffortActionCfg(asset_name="robot", joint_names=[".*"], scale=7.5)
+    joint_pos = mdp.JointPositionActionCfg(asset_name="robot", joint_names=[".*"], scale=0.5, use_default_offset=True)
 
 
 @configclass
@@ -136,6 +155,18 @@ class ObservationsCfg:
 @configclass
 class EventCfg:
     """Configuration for events."""
+
+    # =======code edit=======
+    # Domain randomization: a discrete, shared friction value per environment, in exact 0.1 increments,
+    # assigned once at startup (same scenario as the group_ten branch).
+    discrete_friction = EventTerm(
+        func=mymdp.randomize_discrete_friction,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "friction_values": (0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2),
+        },
+    )
 
     reset_base = EventTerm(
         func=mdp.reset_root_state_uniform,
