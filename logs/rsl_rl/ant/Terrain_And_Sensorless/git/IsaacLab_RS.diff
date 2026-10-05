@@ -1,0 +1,13 @@
+--- git status ---
+On branch legacy
+Your branch is ahead of 'origin/legacy' by 6 commits.
+  (use "git push" to publish your local commits)
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	logs/rsl_rl/ant/2026-10-05_17-51-03_Terrain_And_Sensorless/
+
+nothing added to commit but untracked files present (use "git add" to track) 
+
+
+--- git diff ---
