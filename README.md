@@ -14,7 +14,7 @@
 
 | index | branch | 목적 | 분기 기준 | 대표 학습 log 경로 |
 | ----- | ------ | ---- | --------- | ------------------ |
-| 0 | `main` | ant_reward(custom 보상 모듈)와 README 보관 | `e83a5d2` | `logs/rsl_rl/ant/2026-10-03_16-22-39_Test21` |
+| 0 | `main` | ant_reward(custom 보상 모듈)와 README 보관 | `e83a5d2` |  |
 | 1 | `legacy` | 도메인 random only (센서·custom reward 없음) | `e83a5d2` | `logs/rsl_rl/ant/Terrain_And_Sensorless` |
 | 2 | `legacy_sensor` | 도메인 random + 지면 센서 | `e83a5d2` | `logs/rsl_rl/ant/Terrain_With_Sensor` |
 | 3 | `group_ten` | 도메인 random + 센서 + custom reward (최신 학습) | `main` (`9616bac`) | `logs/rsl_rl/ant/2026-10-04_21-27-44_Test10` |
