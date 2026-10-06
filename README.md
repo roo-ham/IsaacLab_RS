@@ -169,8 +169,6 @@ git checkout group_ten_testreward
 
 ### 3. 새로 만들어진 custom reward 함수
 
-수식 없이, 함수의 코드 상 제목과 의미적 제목, weight만 적었습니다.
-
 | 코드 상 제목 (함수명) | 의미적 제목 | weight |
 | --------------------- | ----------- | ------ |
 | `base_height_l2` | 지면 기준 torso 높이를 목표 높이에 맞추는 페널티 | -10.0 |
@@ -180,14 +178,6 @@ git checkout group_ten_testreward
 | `yaw_deviation_l2` | torso yaw가 진행 방향(+x)에서 벗어나는 것에 대한 페널티 | -2.0 |
 | `swing_obstacle_clearance` | 스윙하는 발끝이 전방 지형(장애물)을 넘지 못할 때의 페널티 | -10.0 |
 | `stumble_without_lift` | 벽을 미는 발이 들리지 않을 때의 페널티 | -5.0 |
-
-보조 함수 (reward term에 직접 등록되지는 않음)
-
-| 코드 상 제목 (함수명) | 의미적 제목 |
-| --------------------- | ----------- |
-| `foot_tip_state` | 발끝의 월드 좌표/속도 계산 (`swing_obstacle_clearance`, `stumble_without_lift`에서 사용) |
-| `foot_tip_height`, `foot_tip_height_local` | 발끝 높이 및 국소 지면 기준 발끝 높이 계산 (`feet_air_time` 등에서 사용) |
-| `AntFootKinematics`, `FOOT_NAMES` | 발끝 offset과 발 이름 정의 |
 
 ### 4. 기존 core mdp 함수를 재사용해 새로 추가된 reward term
 
